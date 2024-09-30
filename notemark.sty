@@ -1,0 +1,249 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesExplPackage{notemark}{2024-09-29}{1.0A}{Notemark Package}
+
+\RequirePackage{tikz, xparse}
+
+\tl_const:Nn \c__notemark_node_name_tl { notemark-node }
+
+\bool_new:N \g__notemark_debug_bool 
+\bool_new:N \g__notemark_disable_bool 
+\tl_new:N \g__notemark_draw_option_tl 
+
+\keys_define:nn { notemark / pkgoption }
+  {
+    debug .bool_set:N = \g__notemark_debug_bool,
+    disable .bool_set:N = \g__notemark_disable_bool
+  }
+
+\cs_if_exist:NTF \ProcessKeyOptions 
+  {
+    \ProcessKeyOptions[ notemark / pkgoption ]
+  }
+  {
+    \RequirePackage{l3keys2e}
+    \ProcessKeysOptions{ notemark / pkgoption }
+  }
+
+
+\bool_if:NTF \g__notemark_debug_bool 
+  { \tl_set:Nn \g__notemark_draw_option_tl { draw = black, very~thin } }
+  { \tl_set:Nn \g__notemark_draw_option_tl { } }
+
+
+\dim_new:N \l__notemark_above_skip_dim
+\dim_new:N \l__notemark_below_skip_dim
+
+\keys_define:nn { notemark }
+  {
+    above-skip .dim_set:N = \l__notemark_above_skip_dim,
+    below-skip .dim_set:N = \l__notemark_below_skip_dim,
+    above-skip .initial:n = 1pt,
+    below-skip .initial:n = 1pt,
+    font .tl_set:N = \l__notemark_font_tl,
+    font .initial:n = \footnotesize,
+    color .tl_set:N = \l__notemark_color_tl,
+    color .initial:n = black,
+  }
+
+
+
+\cs_new_protected_nopar:Npn \__notemark_get_node_width:nN #1#2
+  {
+    \pgfpointdiff{\pgfpointanchor{#1}{west}}{\pgfpointanchor{#1}{east}}
+    \dim_set_eq:NN #2 \pgf@x
+  }
+
+\cs_new_protected_nopar:Npn \__notemark_get_mark_name:NN #1#2
+  {
+    \str_set:Nn \l__notemark_mark_name_str { #1 }
+    \str_remove_once:NV \l__notemark_mark_name_str \c_backslash_str 
+    \tl_remove_all:Nn \l__notemark_mark_name_str {~}
+    \tl_set:NV #2 \l__notemark_mark_name_str
+  }
+
+\dim_new:N \l_notemark_textwidth_dim
+\dim_new:N \notewidth
+
+\str_new:N \l__notemark_mark_name_str 
+
+\cs_generate_variant:Nn \str_remove_once:Nn { NV }
+
+\tl_new:N \l__notemark_mark_name_tl 
+\clist_new:N \g__notemark_names_clist
+% #1 command name, #2, keys set, #3 sep style 
+\cs_new_protected_nopar:Npn \notemark_declare_mark:Nnn #1#2#3
+  {
+    \__notemark_get_mark_name:NN #1 \l__notemark_mark_name_tl
+    \exp_args:NV \__notemark_declare_mark_aux_i:Nnn \l__notemark_mark_name_tl { #2 }{ #3 }
+    \exp_args:NV \__notemark_declare_mark_aux_ii:N \l__notemark_mark_name_tl
+  }
+
+
+\cs_new_protected_nopar:Npn \__notemark_declare_mark_aux_i:Nnn #1#2#3
+  {
+    \newcounter{#1}
+    \exp_args:Nc \NewDocumentCommand { #1 } { O{} m m }
+      {
+        \group_begin:
+        \keys_set:nn { notemark } { #2, ##1 }
+        \tikz[baseline = (\c__notemark_node_name_tl.base), every~node/.estyle = { \g__notemark_draw_option_tl }, inner~sep = 0pt, outer~sep = 0pt]
+          {
+            \node[ name = \c__notemark_node_name_tl ] {##2};
+
+            \__notemark_get_node_width:nN { \c__notemark_node_name_tl } \l_notemark_textwidth_dim
+
+            \dim_set_eq:NN \notewidth \l_notemark_textwidth_dim
+            
+            \node[
+              name = \c__notemark_node_name_tl-sep,
+              anchor = north, 
+              overlay, 
+              yshift = -\l__notemark_above_skip_dim, 
+              text~width = \l_notemark_textwidth_dim,
+              baseline,
+              ] at (\c__notemark_node_name_tl.south) {#3};
+
+            \node[
+              anchor = north, 
+              overlay, 
+              font = \l__notemark_font_tl,
+              text = \l__notemark_color_tl, 
+              yshift = -\l__notemark_below_skip_dim] at (\c__notemark_node_name_tl-sep.south) {
+                \refstepcounter{#1} 
+                ##3 
+                \label{#1:\use:c{the#1}}
+              };
+          }
+        \group_end: 
+      }
+  }
+
+
+% #1 command name, #2 keys set, #3 sep style
+\cs_new_protected_nopar:Npn \__notemark_declare_mark_aux_ii:N #1
+  {
+    \tl_new:c { g__notemark_#1_tl }
+    \clist_gput_right:Nn \g__notemark_names_clist { #1 }
+    \hook_gput_code_with_args:nnn{cmd/#1/after}{.}
+      {
+        \tl_gput_right:ce { g__notemark_#1_tl }
+          {
+            \exp_not:N \task 
+            \exp_not:N \l__notemark_list_label_format_tl{##2}
+            \exp_not:N \l__notemark_list_separator_tl
+            \exp_not:N \l__notemark_list_content_format_tl{##3} 
+            \exp_not:N \l__notemark_list_ref_tl {#1:\use:c{the#1}}{\thepage}
+          }
+      }
+  }
+
+\NewDocumentCommand \declarenotemark { O{} m m O{} }
+  { \notemark_declare_mark:Nnn #2 { #1, #4 } { #3 } }
+
+\hook_gput_code:nnn {begindocument/before}{.}
+  {
+    \bool_if:NT \g__notemark_disable_bool
+      {
+        \clist_map_inline:Nn \g__notemark_names_clist 
+          {
+            \exp_args:Nc \RenewDocumentCommand{#1}{ O{} m m }{##2\refstepcounter{#1} 
+            \label{#1:\use:c{the#1}}}
+          }
+      }
+    \clist_set_eq:NN \l__notemark_list_mark_list_clist \g__notemark_names_clist
+  }
+
+\RequirePackage{tasks}
+
+\NewDocumentCommand \defaultref { mm }{,~P\textsuperscript{\pageref{#1}}}
+
+\keys_define:nn { notemark / list }
+  {
+    column .int_set:N = \l__notemark_list_column_int,
+    column .initial:n = 2,
+    tasks-set .tl_set:N = \l__notemark_tasks_options_tl,
+    list .clist_set:N = \l__notemark_list_mark_list_clist,
+    % list .initial:V = \g__notemark_names_clist,
+    exclude .clist_set:N = \l__notemark_list_exclude_clist,
+    label-format .tl_set:N = \l__notemark_list_label_format_tl,
+    label-format .initial:n = \textbf,
+    content-format .tl_set:N = \l__notemark_list_content_format_tl,
+    separator .tl_set:N = \l__notemark_list_separator_tl,
+    separator .initial:n = {:~},
+    contents-name .tl_set:N = \l__notemark_list_contents_name_tl,
+    contents-name .initial:n = {List~Of~Mark},
+    ref .tl_set:N = \l__notemark_list_ref_tl,
+    ref .initial:n = \defaultref,
+  }
+
+
+
+\tl_new:N \l__notemark_list_content_tl 
+
+\cs_new_protected_nopar:Npn \notemark_list_marks:n #1 
+  {
+    \keys_set:nn { notemark / list } { #1 }
+    \__notemark_list_marks_aux:N \l__notemark_list_content_tl
+    \use:e 
+      {
+        \exp_not:N \begin{tasks}[
+          label = \exp_not:N \underline{\exp_not:N \arabic*}., label-width = 15pt,
+          \exp_not:V \l__notemark_tasks_options_tl](\exp_not:V \l__notemark_list_column_int)
+          \exp_not:V \l__notemark_list_content_tl
+        \exp_not:N \end{tasks}
+      }
+
+    \tl_clear:N \l__notemark_list_content_tl
+  }
+
+\clist_new:N \l__notemark_tmpa_clist
+\clist_new:N \l__notemark_tmpb_clist
+\clist_new:N \l__notemark_tmpc_clist
+\cs_new_protected_nopar:Npn \__notemark_list_marks_aux:N #1
+  {
+    \clist_map_inline:Nn \l__notemark_list_exclude_clist
+      {
+        \clist_put_right:Ne \l__notemark_tmpb_clist { \tl_to_str:n { ##1 } }
+      }
+
+    \clist_map_inline:Nn \l__notemark_list_mark_list_clist
+      {
+        \clist_put_right:Ne \l__notemark_tmpc_clist { \tl_to_str:n { ##1 } }
+      }
+
+    \clist_map_inline:Nn \l__notemark_tmpc_clist 
+      {
+        \clist_if_in:NnF \l__notemark_tmpb_clist { ##1 }
+          {
+            \clist_put_right:Nn \l__notemark_tmpa_clist { ##1 }
+          }
+      }
+
+
+    \section*{\l__notemark_list_contents_name_tl}
+
+    \clist_map_inline:Nn \l__notemark_tmpa_clist 
+      {
+        \tl_put_right:Nv #1 { g__notemark_##1_tl }
+      }
+    \clist_clear:N \l__notemark_tmpa_clist
+    \clist_clear:N \l__notemark_tmpb_clist
+    \clist_clear:N \l__notemark_tmpc_clist
+  } 
+
+
+\NewDocumentCommand \listofmarks { O{} }
+  { \notemark_list_marks:n {#1} }
+
+\@onlypreamble\declarenotemark
+\ExplSyntaxOff
+\usetikzlibrary{decorations.pathmorphing}
+
+\declarenotemark\underlinenotemark{\color{red}\hrulefill}[color = red]
+\declarenotemark\underdotnotemark{\color{purple}\dotfill}[color = purple]
+
+\declarenotemark\underwavynotemark{%
+  \tikz[] \draw[magenta, decorate, decoration={snake, amplitude=0.4pt, segment length=1mm}] (0,0) --++ (\notewidth, 0);
+}[below-skip = 1pt, color = magenta, above-skip = 1pt]
+\endinput
+
